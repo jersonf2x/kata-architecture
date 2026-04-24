@@ -231,14 +231,14 @@ Estos son los requerimientos que tienen mayor impacto en las decisiones de arqui
 
 | ID | Requerimiento | Por que es significativo | Equipo Owner |
 |----|--------------|------------------------|-------------|
-| RF-01 | Procesar transferencias internacionales P2P con conversion FX (Cambio de Divisas) en tiempo real | Involucra orquestacion de multiples subdominios (FX (Cambio de Divisas), Fraude, Ledger, Clearing (Reconciliación)) | Global Operations |
+| RF-01 | Procesar transferencias internacionales P2P con conversion FX (Cambio de Divisas) en tiempo real | Involucra orquestacion de multiples subdominios (FX (Cambio de Divisas), Fraude, Ledger, Clearing) | Global Operations |
 | RF-02 | Deteccion de fraude en < 100ms por transaccion | Requiere arquitectura de baja latencia, no puede ser sincrono-bloqueante | Trust & Safety |
 | RF-03 | Registro inmutable de doble entrada en el Ledger | Requiere consistencia fuerte (ACID) en saldos, define patron de datos | System of Record |
 | RF-04 | Reconciliacion automatica sin bloquear operacion | Eliminar la ventana batch nocturna, requiere CQRS o procesamiento stream | System of Record |
 | RF-05 | Onboarding con verificacion KYC asincrona | Integracion asincrona con proveedores externos (webhooks), define patron de integracion | Growth & CX |
 | RF-06 | Screening contra listas de sanciones (OFAC, PEP) en cada transaccion | Punto de validacion obligatorio en el pipeline de pagos, afecta latencia | Trust & Safety |
 | RF-07 | Dispersion masiva: 500K pagos batch a 50 paises | Requiere procesamiento batch masivo paralelo, patrones de memoria (Flyweight) | Global Operations |
-| RF-08 | Clearing (Reconciliación) & Settlement via multiples redes (SWIFT, SEPA, ACH, PIX) | Multiples protocolos y patrones de integracion, algunos legacy (ISO 8583 TCP) | Global Operations |
+| RF-08 | Clearing & Settlement via multiples redes (SWIFT, SEPA, ACH, PIX) | Multiples protocolos y patrones de integracion, algunos legacy (ISO 8583 TCP) | Global Operations |
 
 ### 1.3.3 Atributos de Calidad y Escenarios
 
@@ -340,7 +340,7 @@ block-beta
     block:l2["NIVEL 2: Capacidades de Soporte al Negocio"]:4
         B1["Onboarding<br/>de Clientes"]
         B2["Gestion de<br/>Tesoreria"]
-        B3["Clearing (Reconciliación) &<br/>Settlement"]
+        B3["Clearing &<br/>Settlement"]
         B4["Cumplimiento<br/>Regulatorio"]
     end
 
@@ -362,7 +362,7 @@ block-beta
 | **Trading FX (Cambio de Divisas) en Tiempo Real** | Core | TRANSFORMAR | Diferenciador para pagos internacionales. Cotizacion y bloqueo de tasa en tiempo real. Hoy acoplado al monolito, debe escalar independientemente. |
 | **Onboarding de Clientes** | Soporte | OPTIMIZAR | Importante pero no diferenciador. Puede mejorar su flujo con KYC asincrono. La verificacion biometrica ya usa proveedores externos (Jumio, Onfido). |
 | **Gestion de Tesoreria** | Soporte | OPTIMIZAR | Monitoreo de liquidez en bancos partner. Es critico pero es mayormente monitoreo y alertas. Necesita datos en tiempo real del Ledger pero no requiere reescritura completa. |
-| **Clearing (Reconciliación) & Settlement** | Soporte | TRANSFORMAR | Integracion con multiples redes (SWIFT, SEPA, ACH, PIX). Hoy tiene conexiones legacy TCP. Necesita adaptadores modernos pero la logica de liquidacion es relativamente estandar. |
+| **Clearing & Settlement** | Soporte | TRANSFORMAR | Integracion con multiples redes (SWIFT, SEPA, ACH, PIX). Hoy tiene conexiones legacy TCP. Necesita adaptadores modernos pero la logica de liquidacion es relativamente estandar. |
 | **Cumplimiento Regulatorio** | Soporte | OPTIMIZAR | Sanctions screening, GDPR, PCI-DSS. Es obligatorio pero no diferenciador. Se puede optimizar con mejores datos y automatizacion de reportes. Listas negras y reglas se pueden externalizar parcialmente. |
 | **Autenticacion y Seguridad** | Generico | OPTIMIZAR | OAuth2, 2FA, manejo de sesiones. Es generico. Soluciones de mercado existen (Keycloak, Auth0). Externalizar sesiones a Redis es suficiente. |
 | **Notificaciones** | Generico | OPTIMIZAR | Push, email, SMS. No es diferenciador. Se puede usar un servicio de notificaciones generico. Solo necesita consistencia eventual con el Ledger. |
@@ -379,7 +379,7 @@ block-beta
                            |
     - Procesamiento Pagos  |  - Deteccion Fraude
     - Ledger/Saldos        |  - Trading FX (Cambio de Divisas)
-    - Clearing (Reconciliación) & Settlement|
+    - Clearing & Settlement|
                            |
     ───────────────────────┼───────────────────────
                            |
