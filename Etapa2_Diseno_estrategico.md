@@ -20,9 +20,9 @@
 
 ```mermaid
 quadrantChart
-    title Core Domain Chart - FinScale / GlobalLedger (simplificado)
-    x-axis Bajo diferencial de negocio --> Alto diferencial de negocio
-    y-axis Baja complejidad de subdominio --> Alta complejidad de subdominio
+    title Core Domain Chart - FinScale / GlobalLedger
+    x-axis  Diferencial de negocio -->  
+    y-axis  Complejidad de subdominio -->  
     Pagos y Orquestacion: [0.75, 0.9]
     Ledger: [0.8, 0.95]
     Fraude: [0.7, 0.85]
