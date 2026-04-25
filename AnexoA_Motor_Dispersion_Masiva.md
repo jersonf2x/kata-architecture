@@ -2,14 +2,16 @@
 
 ---
 
+Este anexo aterriza la arquitectura en un diseño de software concreto. El `MassPaymentProcessor` procesa lotes grandes de pagos, por ejemplo 500.000 instrucciones en una dispersion masiva. Los patrones usados son patrones **GoF** (*Gang of Four*), es decir, soluciones de diseño conocidas para problemas repetidos de construccion, memoria, validacion, estados, integracion y notificacion.
+
 ## A.0 Resumen de responsabilidad del `MassPaymentProcessor`
 
 | Fase | Responsabilidad |
 |------|-----------------|
 | Ingesta | Leer lote, materializar o clonar `PaymentInstruction` (Builder + Prototype + Flyweight). |
 | Validacion de riesgo | En cadena, validaciones activables (Chain of Responsibility). |
-| Ciclo de vida | Trasladar pago con State |
-| Envio | Aplicar abstraccion *urgente/normal* (Bridge) sobre canales reales. |
+| Ciclo de vida | Gestionar el avance del pago con State. |
+| Envio | Aplicar abstraccion *urgente/normal* (Bridge) sobre canales reales como SWIFT, API local o archivo. |
 | Transiciones | Al cambiar estado, notificar a contabilidad, notificaciones y analitica (Observer). |
 
 ---
@@ -243,6 +245,8 @@ cumplidos, sin exponer constructores con decenas de parametros.
 - Juntos: **Builder** para casos **nuevos/heterogeneos**; **Template** para **recurrentes**
   (p. ej. *warm cache* de plantillas por `beneficiaryId`).
 
+**Ejemplo simple**: si 10.000 pagos van al mismo proveedor de nomina, la plantilla guarda beneficiario, banco y pais. El Builder solo completa monto, fecha e identificador de cada instruccion.
+
 ---
 
 ## A.4 Patron 2 — **Flyweight**
@@ -267,6 +271,8 @@ objetos repetidos en cada pago.
 Cumplimiento estricto del requisito de *memoria*: a escala, las instrucciones comparten un
 mismo **catalogo** inmutable de divisas, paises y rutas frecuentes. Los *flyweights* son
 **inmutables** y, por tanto, adecuados para entornos concurrentes (thread-safe).
+
+**Ejemplo simple**: en lugar de crear 500.000 objetos `Currency("USD")`, todas las instrucciones apuntan a la misma referencia compartida `currency("USD")`.
 
 ---
 
@@ -392,10 +398,65 @@ motor *batch* el criterio es el mismo. Evita dependencias duras a implementacion
 
 | Patron | Pregunta que responde | Por que aqui |
 |--------|------------------------|-------------|
-| **Builder** | Co construir 40+ campos con validacion | Parametros guiados, invariantes en un sitio. |
+| **Builder** | Como construir 40+ campos con validacion | Parametros guiados, invariantes en un sitio. |
 | **Prototype (plantilla)** | Como el 90% no repita peso estructural | Reuso de estructura estable, solo parcha monto/fecha. |
 | **Flyweight** | Donde ahorro memoria a escala 500K | Inmutables compartidos: divisa, pais, banco. |
-| **Chain of Responsibility** | Valida. dinamica, sin nodo sabiendo la cadena | Extensible, orden configurable. |
+| **Chain of Responsibility** | Como validar de forma dinamica sin que cada nodo conozca toda la cadena | Extensible, orden configurable. |
 | **State** | Ciclo de vida complejo, sin *if* por estado | Comportamiento acoplado al estado, transiciones explícitas. |
-| **Bridge** | Urgente/normal vs STP/Ripple/Local | Separar politica de negocio y adaptacion a red. |
-| **Observer** | Cuantos reaccionan a `Failed` sin fregar el dominio | Extensibilidad y bajo acoplamiento. |
+| **Bridge** | Urgente/normal vs SWIFT/Ripple/Local | Separar politica de negocio y adaptacion a red. |
+| **Observer** | Como varios modulos reaccionan a `Failed` sin acoplarse al dominio | Extensibilidad y bajo acoplamiento. |
+
+---
+
+## A.10 Ejemplo abreviado de implementacion e interaccion de patrones
+
+El siguiente ejemplo muestra la secuencia completa sin entrar en detalles de framework. Sirve como prueba de escritorio para entender como cooperan los patrones.
+
+```java
+var flyweights = new PayoutFlyweightFactory();
+var payrollTemplate = new BeneficiaryTemplate(
+    flyweights.country("CO"),
+    flyweights.currency("COP"),
+    flyweights.routing("BANCOCOBB")
+);
+
+PaymentInstruction instruction = payrollTemplate.toInstruction(
+    Money.of("COP", 250_000),
+    LocalDate.parse("2026-04-30")
+);
+
+var chain = ValidationChain.of(
+    new IbanSyntaxValidator(),
+    new BalanceValidator(),
+    new SanctionsListValidator(),
+    new VelocityLimitValidator()
+);
+
+var channel = new SwiftIso20022Channel();
+var transfer = new NormalTransfer(channel);
+
+var process = new PaymentProcess(instruction, transfer, new DraftState());
+process.attach(new AccountingReversalListener());
+process.attach(new PushNotificationListener());
+process.attach(new AnalyticsErrorListener());
+
+ValidationResult result = chain.validate(instruction);
+if (result.isApproved()) {
+    process.transition(PaymentEvent.VALIDATED);
+    process.transition(PaymentEvent.SEND_REQUESTED);
+    transfer.send(instruction);
+    process.transition(PaymentEvent.ACK_RECEIVED);
+} else {
+    process.transition(PaymentEvent.FAILED);
+}
+```
+
+Lectura del ejemplo:
+
+- **Prototype** crea la instruccion desde una plantilla de beneficiario frecuente.
+- **Flyweight** comparte pais, moneda y ruta bancaria para no duplicar memoria.
+- **Builder** puede intervenir dentro de `toInstruction(...)` para completar y validar campos obligatorios.
+- **Chain of Responsibility** ejecuta validaciones configurables antes del envio.
+- **State** controla que el pago avance solo por transiciones validas.
+- **Bridge** separa el tipo de transferencia (`NormalTransfer`) del canal tecnico (`SwiftIso20022Channel`).
+- **Observer** avisa a contabilidad, notificaciones y analitica cuando cambia el estado.

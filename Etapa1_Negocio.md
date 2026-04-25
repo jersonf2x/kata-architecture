@@ -5,9 +5,16 @@
 ## 1.1 Contexto del negocio
 
 FinScale es una fintech con 15 anos de operacion, presencia en 12 paises y una plataforma
-legacy centralizada (`LegacyCore`) sobre Java 8/J2EE + Oracle. El negocio necesita evolucionar
-hacia `GlobalLedger` para escalar de 2,000 TPS a picos de 1,000,000 TPS, operar 24/7 y
-reducir el time-to-market de 4 meses sin detener la operacion actual.
+heredada centralizada (`LegacyCore`) sobre Java 8/J2EE + Oracle. El negocio necesita evolucionar
+hacia `GlobalLedger` para escalar de 2,000 **TPS** a picos de 1,000,000 **TPS**, operar 24/7 y
+reducir el **time-to-market** de 4 meses sin detener la operacion actual.
+
+En terminos ejecutivos:
+
+- **TPS** significa transacciones por segundo; mide cuantas operaciones puede procesar la plataforma.
+- **Legacy** o sistema heredado significa que el sistema actual sigue siendo critico, pero su tecnologia y diseno limitan el crecimiento.
+- **Time-to-market** es el tiempo que tarda una idea de negocio en llegar a produccion.
+- **24/7** significa operacion continua, sin ventanas de mantenimiento que bloqueen a los clientes.
 
 ### Diagrama de componentes del sistema actual (AS-IS)
 
@@ -56,9 +63,9 @@ flowchart LR
 | Dolor | Descripcion breve | Impacto |
 |---|---|---|
 | Monolito acoplado | Todo pasa por `LegacyCore`; no hay despliegue ni escalado por modulo | Time-to-market lento y alto riesgo de regresion |
-| Oracle como cuello de botella | BD compartida, bloqueos frecuentes y 40% de logica en PL/SQL | Caida de rendimiento y alta complejidad de migracion |
-| Fragilidad operativa | Batch nocturno y ventanas de mantenimiento de 6 horas | Imposible cumplir operacion 24/7 |
-| Integraciones legacy stateful | ISO 8583 TCP persistente + dependencias HSM on-prem | Dificulta cloud native y elasticidad |
+| Oracle como cuello de botella | Base de datos compartida, bloqueos frecuentes y 40% de logica en PL/SQL | Caida de rendimiento y alta complejidad de migracion |
+| Fragilidad operativa | Batch nocturno (proceso masivo programado) y ventanas de mantenimiento de 6 horas | Imposible cumplir operacion 24/7 |
+| Integraciones legacy stateful | ISO 8583 TCP persistente + dependencias HSM on-premise | Dificulta adopcion cloud native y elasticidad |
 | Acoplamiento con satelites por BD | Sistemas externos dependen del esquema interno | Cambios de datos rompen integraciones no controladas |
 | Escalabilidad insuficiente | Arquitectura sincrona bloqueante y sesiones sticky | No soporta objetivo de 1M TPS |
 
@@ -232,7 +239,7 @@ Estos son los requerimientos que tienen mayor impacto en las decisiones de arqui
 | ID | Requerimiento | Por que es significativo | Equipo Owner |
 |----|--------------|------------------------|-------------|
 | RF-01 | Procesar transferencias internacionales P2P con conversion FX (Cambio de Divisas) en tiempo real | Involucra orquestacion de multiples subdominios (FX (Cambio de Divisas), Fraude, Ledger, Clearing) | Global Operations |
-| RF-02 | Deteccion de fraude en < 100ms por transaccion | Requiere arquitectura de baja latencia, no puede ser sincrono-bloqueante | Trust & Safety |
+| RF-02 | Deteccion de fraude en < 100ms por transaccion | Requiere arquitectura de baja latencia; puede responder en linea, pero no debe depender de consultas lentas o bloqueantes | Trust & Safety |
 | RF-03 | Registro inmutable de doble entrada en el Ledger | Requiere consistencia fuerte (ACID) en saldos, define patron de datos | System of Record |
 | RF-04 | Reconciliacion automatica sin bloquear operacion | Eliminar la ventana batch nocturna, requiere CQRS o procesamiento stream | System of Record |
 | RF-05 | Onboarding con verificacion KYC asincrona | Integracion asincrona con proveedores externos (webhooks), define patron de integracion | Growth & CX |
@@ -245,7 +252,7 @@ Estos son los requerimientos que tienen mayor impacto en las decisiones de arqui
 | ID | Atributo | Escenario | Estimulo | Respuesta Esperada | Metrica |
 |----|----------|-----------|----------|-------------------|---------|
 | QA-01 | **Escalabilidad** | Evento masivo de mercadeo genera pico de transacciones | Carga sube de 2K a 1M TPS en minutos | El sistema escala automaticamente sin degradacion | Tiempo de auto-scale < 2 min, 0% de transacciones perdidas |
-| QA-02 | **Disponibilidad** | Fallo catastrofico en el modulo de Fraude | Nodo de fraude se cae completamente | El procesamiento de pagos continua (con flag de revision posterior) | Uptime 99.999% = max 5.26 min downtime/año |
+| QA-02 | **Disponibilidad** | Fallo catastrofico en el modulo de Fraude | Nodo de fraude se cae completamente | El procesamiento no se detiene: pagos de bajo riesgo pueden quedar en cola o en estado `PENDING_REVIEW`; pagos de alto riesgo se bloquean hasta recuperar control | Uptime 99.999% = max 5.26 min downtime/año |
 | QA-03 | **Rendimiento** | Cliente inicia una transferencia internacional | Request HTTP llega al sistema | Respuesta al cliente en < 2 segundos (confirmacion de recepcion) | Latencia p99 < 2s end-to-end |
 | QA-04 | **Rendimiento** | Motor de fraude evalua una transaccion | Transaccion entra al pipeline de fraude | Veredicto emitido | Latencia p99 < 100ms |
 | QA-05 | **Resiliencia** | Red SWIFT no disponible temporalmente | Timeout en conexion SWIFT | Sistema encola el pago y reintenta automaticamente al restaurarse | 0 pagos perdidos, reintento automatico < 5 min |
@@ -254,6 +261,10 @@ Estos son los requerimientos que tienen mayor impacto en las decisiones de arqui
 | QA-08 | **Seguridad** | Auditoria de cumplimiento PCI-DSS y GDPR | Auditor solicita trazabilidad de una transaccion | Sistema provee traza completa: origen, ruta, timestamps, responsables | 100% de transacciones trazables |
 | QA-09 | **Desplegabilidad** | Se necesita actualizar el modulo de FX (Cambio de Divisas) sin afectar Pagos | Deploy de nueva version de FX (Cambio de Divisas) | Deploy independiente sin downtime ni afectacion a otros modulos | Deploy en < 15 min, 0 downtime |
 | QA-10 | **Modificabilidad** | Nuevo pais requiere integracion con red de pago local | Agregar soporte para nueva red (ej. PIX Brasil) | Se integra sin modificar el core de pagos | Tiempo de integracion < 2 semanas |
+
+**Ejemplo simple de lectura de un atributo de calidad**
+
+Si la red SWIFT no responde durante 3 minutos, el cliente no debe perder su pago ni recibir una confirmacion falsa. La plataforma registra la intencion, devuelve un estado `PENDING`, reintenta de forma controlada y permite consultar el mismo `correlationId` hasta que la red confirme o rechace la operacion.
 
 ### 1.3.4 Architectural Concerns
 
@@ -265,7 +276,7 @@ Preocupaciones transversales que los stakeholders han expresado:
 | AC-02 | Coexistencia legacy-moderno | CTO / Equipos Dev | Durante la migracion, el monolito y los nuevos servicios deben coexistir y compartir datos. |
 | AC-03 | Retencion de talento | VP Engineering | El equipo actual conoce Java 8/J2EE. La migracion a Spring Boot 4 + Virtual Threads reduce la curva de aprendizaje frente a un modelo totalmente reactivo. |
 | AC-04 | Costo de infraestructura | CFO | Escalar a 1M TPS en cloud puede ser costoso. Necesitamos auto-scaling inteligente. |
-| AC-05 | Observabilidad | SRE / Ops | En un sistema distribuido, tracing y monitoring end-to-end son criticos. |
+| AC-05 | Observabilidad | SRE / Ops | En un sistema distribuido, el trazado y monitoreo de punta a punta son criticos para saber que paso con cada pago. |
 | AC-06 | Consistencia de datos en migracion | DBA / Arquitecto | Mientras coexisten legacy y moderno, los datos deben estar sincronizados (Golden Record). |
 
 ### 1.3.5 Restricciones
@@ -275,7 +286,7 @@ Preocupaciones transversales que los stakeholders han expresado:
 | ID | Restriccion | Origen | Impacto en Diseño |
 |----|------------|--------|------------------|
 | RT-01 | Stack objetivo: Java 25 + Spring Boot 4 (Spring Web MVC + Virtual Threads) | Objetivo estrategico de la empresa | Define lenguaje, framework y modelo de concurrencia para alta escalabilidad sin complejidad reactiva extrema |
-| RT-02 | HSMs fisicos on-premise para criptografia | Regulacion PCI-DSS + inversion existente | Arquitectura hibrida (cloud + on-prem) o migracion a Cloud HSM |
+| RT-02 | HSMs fisicos on-premise para criptografia | Regulacion PCI-DSS + inversion existente | Arquitectura hibrida (cloud + on-premise) o migracion a Cloud HSM |
 | RT-03 | Conexion ISO 8583 sobre TCP con Visa/Mastercard | Protocolo impuesto por las redes de tarjetas | Necesita sidecar/proxy dedicado para manejar conexiones stateful |
 | RT-04 | Integraciones legacy variadas por pais (SFTP, SOAP, REST) | Redes locales de cada pais | Patron adaptador/anti-corruption layer por integracion |
 | RT-05 | Latencia < 200ms para autorizaciones con tarjetas | SLA con Visa/Mastercard | Componente de autorizacion debe estar geograficamente cerca |

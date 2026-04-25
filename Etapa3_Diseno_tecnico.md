@@ -2,6 +2,8 @@
 
 ---
 
+Esta etapa baja el diseno estrategico a componentes concretos. **C4** es una forma de explicar arquitectura por niveles: primero el sistema en su entorno, luego sus contenedores principales, despues sus componentes internos. **UML** aporta diagramas complementarios para despliegue, integracion y clases. La intencion es que arquitectura, desarrollo, operaciones y gerencia puedan ver la misma solucion con distinto nivel de detalle.
+
 ## 3.1 C4 - Nivel 1: Vista de contexto (System Context)
 
 Actores y sistemas externos. GlobalLedger se muestra como producto; `LegacyCore` en transicion
@@ -19,7 +21,7 @@ C4Context
         System(leg, "LegacyCore (monolito en salida)", "Sistema de registro mientras dura la coexistencia; Oracle + modulos viejos")
     }
 
-    System_Ext(iban, "Redes bancarias y esquemas", "SWIFT, SEPA, ACH, PIX, visanet")
+    System_Ext(iban, "Redes bancarias y esquemas", "SWIFT, SEPA, ACH, PIX, VisaNet")
     System_Ext(ban, "Bancos corresponsales", "H2H, Open Banking")
     System_Ext(kyc, "Proveedores KYC/AML", "Jumio, Onfido, listas (World-Check, etc.)")
     System_Ext(pci, "HSM (on-prem / hibrido)", "Claves, firma, PCI")
@@ -102,7 +104,7 @@ C4Component
     }
 
     ContainerDb_Ext(db, "Ordenes de pago (OLTP local)", "PostgreSQL")
-    Container_Ext(oth, "Otros servicios", "FX, Fraud, Ledger, Clearning")
+    Container_Ext(oth, "Otros servicios", "FX, Fraud, Ledger, Clearing")
     System_Ext(bus, "Kafka", "Eventos de dominio")
 
     Rel(in, app, "Invoca", "Sincrono")
@@ -128,7 +130,7 @@ flowchart TB
     subgraph u["Usuarios"]
         M[Movil / Web]
     end
-    subgraph edge[Edge / Borda]
+    subgraph edge[Edge / Borde]
         W[Firewall / WAF]
         AG[API Gateway - HA]
     end
@@ -389,4 +391,33 @@ solo con el estilo reactivo del framework web.
 | **Proyecciones, notificaciones, reportes, tesoreria read** | **Eventual** (segundos / minutos) | Outbox, Kafka, consumo idempotente, reconciliacion operativa. |
 | **Canales: lectura "saldo en pantalla"** | **Lectura eventual aceptable** o lectura de **read model** optimizado, con criterio de SLO en Etapa 4+ | Alinea con QA-07; la verdad dura se consulta a Ledger bajo criterio de producto. |
 | **Coexistencia con Oracle** | Fases: **fuentes de verdad duales bajo gobierno** hacia un **Golden Record** (CDC, ACL, reprocessing) | Evita divergencia silenciosa; requiere linaje (Etapa 5 en profundidad). |
+
+---
+
+## 3.11 Spec Driven Design para implementacion asistida por IA
+
+Durante la implementacion se propone trabajar con **Spec Driven Design**: antes de generar codigo, cada flujo critico se expresa como una especificacion verificable. Esto permite aprovechar agentes de inteligencia artificial sin delegarles decisiones ambiguas de negocio.
+
+Una especificacion debe incluir:
+
+- **Contrato de entrada y salida**: API, evento o comando con campos, tipos, ejemplos y errores esperados.
+- **Reglas de negocio**: invariantes que no pueden romperse, por ejemplo "un saldo no queda negativo" o "un pago no se procesa dos veces con la misma clave de idempotencia".
+- **Estados permitidos**: transiciones validas del pago, por ejemplo `CREATED -> VALIDATED -> SENT -> SETTLED`.
+- **Criterios de aceptacion**: casos que demuestran cuando la funcionalidad esta completa.
+- **Pruebas base**: unitarias, de contrato y de integracion, para que el agente produzca codigo contra una expectativa medible.
+
+**Ejemplo abreviado: especificacion antes de codigo**
+
+Caso: aceptar una orden de pago P2P.
+
+```text
+Dado un cliente activo con saldo disponible de 100 USD
+Y una solicitud con Idempotency-Key = "abc-123"
+Cuando envia un pago de 25 USD a un beneficiario valido
+Entonces Payment Orchestration crea una orden en estado ACCEPTED
+Y registra una fila Outbox con el evento PaymentAccepted
+Y si la misma solicitud se repite con la misma Idempotency-Key, retorna la misma orden sin duplicar el debito
+```
+
+Con esta especificacion, un agente de IA puede generar controladores, casos de uso, pruebas y adaptadores. El equipo humano conserva el control validando contratos, reglas e invariantes antes de aceptar el codigo.
 

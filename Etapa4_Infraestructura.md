@@ -6,12 +6,9 @@
 
 ### 4.1.1 Objetivo de plataforma
 
-- **SLO/SLA de negocio** (acuerdos de servicio): disponibilidad 99,999% en servicio, sin ventana de
-  mantenimiento; absorcion de **picos** hacia 1M TPS en capa de eventos/edge con dimensionamiento
-  adecuado; **RTO/RPO** (tiempos de recuperación) acotados por categoria de pago.
+- **SLO/SLA de negocio**: el **SLO** es el objetivo interno de servicio y el **SLA** es el compromiso formal con clientes o negocio. Para esta kata se busca disponibilidad 99,999%, sin ventana de mantenimiento; absorcion de **picos** hacia 1M TPS en capa de eventos/borde con dimensionamiento adecuado; **RTO/RPO** acotados por categoria de pago. **RTO** es cuanto tiempo maximo se acepta para recuperar el servicio; **RPO** es cuanta perdida de datos se tolera.
 
-- **Separacion de fronteras**: borde (Web App Firewall WAF, API, rate limit) vs plano de datos de transacciones (OLTP) vs
-  **streaming** (Kafka) vs **legado** (Oracle) vs **Perimetro criptográfico HSM/PCI** (hibrido).
+- **Separacion de fronteras**: borde (Web App Firewall o **WAF**, APIs y limites de uso), plano de datos transaccionales (**OLTP**, procesamiento de operaciones de negocio), **streaming** (Kafka), **legado** (Oracle) y **perimetro criptografico HSM/PCI** (hibrido).
 
 
 ```mermaid
@@ -58,7 +55,7 @@ flowchart TB
 
 | Driver / atributo | Tacticas concretas |
 |--------------------------|-------------------|
-| **Disponibilidad 99,999%** | Health checks agresivos, excluir carga en nodos no sanos,**DLQ** (Kafka). |
+| **Disponibilidad 99,999%** | Health checks agresivos, excluir carga en nodos no sanos, **DLQ** (cola de mensajes fallidos en Kafka). |
 | **"Red SWIFT cae, no pierdo pago"** (QA-05) | **Timeout** + **retry** con idempotencia; **almacenamiento** de intencion con estado; **reproceso** y alertas. |
 | **"Operacion 24/7"** (sin read-only 02:00-04:00) | Procesos **asincronicos** y **reconciliacion** sin full scan bloqueante (diseñado en Etapa 1/2/3). |
 
@@ -68,7 +65,7 @@ flowchart TB
 |------------|-------------------|---------------------------------------------|
 | **TimeLimiter** | Llamada a fraude, clearing, banco | Corte p99, circuito, degradacion. |
 | **Retry** | Reintentar solo operaciones idempotentes | No duplicar pago. |
-| **CircuitBreaker** | Banco, red, KYC, legado inestable | Aisla falla en caliente, evita aplanar hebras/threads. |
+| **CircuitBreaker** | Banco, red, KYC, legado inestable | Aisla una falla activa, evita saturar hilos y protege al resto del sistema. |
 
 
 ---
@@ -177,7 +174,7 @@ flowchart TB
 ### Fase 2 — Sourcing: mas trafico al Core, Golden Record y proyecciones (cambio vs Fase 1)
 
 **Cambio en negocio (vs Fase 1).** El **Strangler** enruta la **mayoria** del trafico al **Core**;
-`LegacyCore` queda **solo** para excepciones o producto aun no migrado. El **doble write a Oracle**
+`LegacyCore` queda **solo** para excepciones o producto aun no migrado. La **doble escritura hacia Oracle**
 se acota a **dominios puntuales** bajo contrato, no a todo el catalogo.
 
 **Cambio en datos (vs Fase 1).** El segundo PostgreSQL (**proyecciones / Golden Record**) se
@@ -281,4 +278,13 @@ flowchart TB
 | Inconsistencia pago-ledger en el corte | SAGA, idempotencia, runbooks, monitoreo. |
 | Retencion y evidencias (Oracle) | Estrategia de archivo, compliance (Etapa 5). |
 | Organizacion | Conway, operacion y documentacion unificadas. |
+
+### Ejemplo simple de migracion progresiva
+
+Supongamos que FinScale empieza con pagos P2P entre USD y EUR:
+
+1. En Fase 1, solo el 5% de esos pagos entra por `GlobalLedger`; el 95% sigue en `LegacyCore`.
+2. Si durante el piloto hay diferencias de conciliacion, el API Gateway devuelve ese corredor al legado y el equipo corrige sin detener toda la operacion.
+3. Cuando el error rate, la latencia p99 y la conciliacion diaria cumplen el criterio de corte, el porcentaje sube a 25%, luego 50% y despues mayoria.
+4. En Fase 3, ese flujo ya no consulta Oracle en linea; Oracle queda como archivo historico o evidencia legal.
 

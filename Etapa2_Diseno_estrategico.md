@@ -2,6 +2,10 @@
 
 ---
 
+Esta etapa traduce el negocio a fronteras de responsabilidad. **DDD** significa *Domain-Driven Design* o diseno guiado por dominio: organizar el software alrededor de las capacidades reales del negocio, no alrededor de tablas o capas tecnicas. Un **bounded context** es una frontera donde un equipo puede usar su propio lenguaje, reglas y datos sin depender de una base de datos compartida.
+
+La idea central para gerencia es simple: si Pagos, Ledger, Fraude y FX cambian por razones distintas, tambien deben poder evolucionar y desplegarse con independencia controlada.
+
 ## 2.1 Core Domain Chart
 
 
@@ -188,12 +192,12 @@ correlacion** (pago, ledger, settlement) y contratos de API/evento, no como FKs 
 ## 2.3 Bounded Contexts (propuesta)
 
 Cada contexto tiene un **ciclo de vida** de despliegue propio, alineado
-a los equipos de negocio y a la extraccion gradual del monolito (`Strangler`).
+a los equipos de negocio y a la extraccion gradual del monolito (`Strangler`). En otras palabras: un cambio en reglas de fraude no deberia obligar a desplegar de nuevo el ledger contable, y una mejora en FX no deberia poner en riesgo las APIs de beneficiarios.
 
 | Bounded Context | Responsabilidad principal | Equipo alineado (kata) |
 |-----------------|----------------------------|-------------------------|
 | **Identity & Access** | Autenticacion, sesion (externa a memoria de app), device binding. | Growth & CX |
-| **Customer & Party** | Perfil, beneficiarios, datos fiscos (party data). | Growth & CX |
+| **Customer & Party** | Perfil, beneficiarios, datos fiscales y datos de parte (party data). | Growth & CX |
 | **Payment Orchestration** | Orden de pago, saga/orquestacion, idempotencia, enrutamiento a FX/Ledger/Clearing. | Global Operations |
 | **FX Quoting** | Pares, spread, bloqueo de tasa, reglas comerciales. | Global Operations |
 | **Fraud & Screening** | Fraude en tiempo real, listas, decision engine; screening OFAC/PEP. | Trust & Safety |
@@ -212,8 +216,9 @@ por fases.
 ## 2.4 Context Map (Mapa de contexto)
 
 Relaciones DDD principales. La orquestacion de pago actua como **orquesta**; **Ledger** y
-**Fraud** son upstream con contratos estrictos; hacia el legado se aplica **ACL** para no
-contaminar el nuevo modelo con tablas y SP heredados.
+**Fraud** son proveedores internos con contratos estrictos; hacia el legado se aplica **ACL**
+(*Anti-Corruption Layer*, capa anticorrupcion) para no contaminar el nuevo modelo con tablas y
+procedimientos almacenados heredados.
 
 ```mermaid
 flowchart TB
@@ -285,6 +290,10 @@ flowchart TB
 Hoy existen integraciones y modulos legacy "satelite" acoplados a `CORE_SCHEMA` que representan un riesgo tipo **Big Ball of Mud**.
 Estrategia de mitigacion: vistas de compatibilidad, APIs gobernadas y `ACL` por contexto para
 reducir acoplamiento progresivamente.
+
+**Ejemplo simple**
+
+Si Pagos necesita saber si una transferencia puede continuar, no consulta directamente tablas de fraude ni tablas Oracle. Pide un veredicto a `Fraud & Screening` mediante un contrato claro. Si el dato viene del legado, solo el `LegacyAdapter` conoce la tabla o el procedimiento almacenado; Pagos recibe una respuesta limpia como `APPROVED`, `REJECTED` o `PENDING_REVIEW`.
 
 ---
 
