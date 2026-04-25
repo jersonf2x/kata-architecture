@@ -17,7 +17,7 @@ flowchart LR
   E3 -.-> A[Anexo A Patrones UML]
 ```
 
-- **Síntesis de stack** acordada en el diseño: **Java 25**, **Spring Boot 4**, **Spring Web MVC con Virtual Threads** (hilos livianos para manejar muchas operaciones de entrada/salida), desacoplamiento con **Kafka** dentro de una **arquitectura orientada a eventos**; consistencia estricta en **Ledger** (libro contable), **SAGA** (coordinación de procesos distribuidos con compensaciones) y **proyecciones** donde aplica. Detalle: [Etapa3 - Stack y consistencia](Etapa3_Diseno_tecnico.md#39-stack-tecnologico-propuesta).
+- **Síntesis de stack** acordada en el diseño: **Java 25**, **Spring Boot 4**, **Spring WebFlux end-to-end** (programacion reactiva y no bloqueante para coordinacion masiva de I/O distribuido en tiempo real), desacoplamiento con **Kafka** dentro de una **arquitectura orientada a eventos**; consistencia estricta en **Ledger** (libro contable), **SAGA** (coordinación de procesos distribuidos con compensaciones) y **proyecciones** donde aplica. Detalle: [Etapa3 - Stack y consistencia](Etapa3_Diseno_tecnico.md#39-stack-tecnologico-propuesta).
 
 ---
 
@@ -69,9 +69,9 @@ La arquitectura propuesta trata a **GlobalLedger** como plataforma de producto, 
 
 En **negocio (Etapa 1)** se fijan drivers de escala, disponibilidad, cumplimiento y **mapa de capacidades**; el foco de transformación cae en pagos, *ledger*, fraude y canales, reduciendo lo que es *commodity*.
 
-En **diseño estratégico (Etapa 2)** el dominio se descompone en **contextos acotados** con un **mapa** explícito (p. ej. *Payment Orchestration* vs *Ledger* vs *Fraud* vs *LegacyAdapter*), de modo que los equipos (Conway) pueden dueñar modelos y despliegues.
+En **diseño estratégico (Etapa 2)** el dominio se descompone en **contextos acotados** con un **mapa** explícito (p. ej. *Payment Orchestration* vs *Ledger* vs *Fraud* vs *LegacyAdapter*), de modo que los equipos (Conway) pueden diseñar modelos y despliegues.
 
-En **diseño técnico (Etapa 3)** la puesta a tierra es **C4/UML**: borde, servicios, Kafka, **SAGA** hacia múltiples *upstream*, **outbox** para fidelidad de eventos, **ACL** al *legacy*. El stack **Java 25 + Spring Boot 4 + Web + Virtual Threads** acerca la complejidad cognitiva al monolito actual, mientras la asincronía y el escalado de picos viven en **messaging**, particionamiento y **escala horizontal** donde aplica, sin imponer WebFlux en todo el ecosistema.
+En **diseño técnico (Etapa 3)** la puesta a tierra es **C4/UML**: borde, servicios, Kafka, **SAGA** hacia múltiples *upstream*, **outbox** para fidelidad de eventos, **ACL** al *legacy*. El stack **Java 25 + Spring Boot 4 + WebFlux** adopta un modelo reactivo de punta a punta para coordinar I/O distribuido en tiempo real, mientras la asincronía y el escalado de picos viven en **messaging**, particionamiento, backpressure y **escala horizontal**.
 
 En **infraestructura (Etapa 4)** la nube aporta **Multi-AZ**, **autoscaling** (pods y nodos) y *patterns* de resiliencia acordes a 99,999% y terceros inestables; el **Strangler** en fases fija riesgo de *dual-write* y “golden record” con criterios de corte y reconciliación.
 

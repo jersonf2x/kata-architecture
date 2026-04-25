@@ -65,7 +65,7 @@ flowchart TB
 |------------|-------------------|---------------------------------------------|
 | **TimeLimiter** | Llamada a fraude, clearing, banco | Corte p99, circuito, degradacion. |
 | **Retry** | Reintentar solo operaciones idempotentes | No duplicar pago. |
-| **CircuitBreaker** | Banco, red, KYC, legado inestable | Aisla una falla activa, evita saturar hilos y protege al resto del sistema. |
+| **CircuitBreaker** | Banco, red, KYC, legado inestable | Aisla una falla activa, evita saturar event loops/pools de adaptadores y protege al resto del sistema. |
 
 
 ---

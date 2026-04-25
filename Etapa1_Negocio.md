@@ -274,7 +274,7 @@ Preocupaciones transversales que los stakeholders han expresado:
 |----|---------|-------------|-------------|
 | AC-01 | Migracion sin interrupcion | CEO / CTO | El negocio mueve millones diarios. NO se puede parar para migrar. |
 | AC-02 | Coexistencia legacy-moderno | CTO / Equipos Dev | Durante la migracion, el monolito y los nuevos servicios deben coexistir y compartir datos. |
-| AC-03 | Retencion de talento | VP Engineering | El equipo actual conoce Java 8/J2EE. La migracion a Spring Boot 4 + Virtual Threads reduce la curva de aprendizaje frente a un modelo totalmente reactivo. |
+| AC-03 | Retencion de talento | VP Engineering | El equipo actual conoce Java 8/J2EE, pero el problema exige coordinacion masiva de I/O distribuido en tiempo real. La migracion a Spring Boot 4 + WebFlux requiere capacitacion reactiva formal y guias de implementacion. |
 | AC-04 | Costo de infraestructura | CFO | Escalar a 1M TPS en cloud puede ser costoso. Necesitamos auto-scaling inteligente. |
 | AC-05 | Observabilidad | SRE / Ops | En un sistema distribuido, el trazado y monitoreo de punta a punta son criticos para saber que paso con cada pago. |
 | AC-06 | Consistencia de datos en migracion | DBA / Arquitecto | Mientras coexisten legacy y moderno, los datos deben estar sincronizados (Golden Record). |
@@ -285,36 +285,40 @@ Preocupaciones transversales que los stakeholders han expresado:
 
 | ID | Restriccion | Origen | Impacto en Diseño |
 |----|------------|--------|------------------|
-| RT-01 | Stack objetivo: Java 25 + Spring Boot 4 (Spring Web MVC + Virtual Threads) | Objetivo estrategico de la empresa | Define lenguaje, framework y modelo de concurrencia para alta escalabilidad sin complejidad reactiva extrema |
+| RT-01 | Stack objetivo: Java 25 + Spring Boot 4 (Spring WebFlux end-to-end) | Objetivo estrategico de la empresa | Define lenguaje, framework y modelo reactivo/no bloqueante para coordinacion masiva de I/O distribuido en tiempo real |
 | RT-02 | HSMs fisicos on-premise para criptografia | Regulacion PCI-DSS + inversion existente | Arquitectura hibrida (cloud + on-premise) o migracion a Cloud HSM |
 | RT-03 | Conexion ISO 8583 sobre TCP con Visa/Mastercard | Protocolo impuesto por las redes de tarjetas | Necesita sidecar/proxy dedicado para manejar conexiones stateful |
 | RT-04 | Integraciones legacy variadas por pais (SFTP, SOAP, REST) | Redes locales de cada pais | Patron adaptador/anti-corruption layer por integracion |
 | RT-05 | Latencia < 200ms para autorizaciones con tarjetas | SLA con Visa/Mastercard | Componente de autorizacion debe estar geograficamente cerca |
 
-### 1.3.6 Decision tecnica: Spring Web + Virtual Threads vs WebFlux
+### 1.3.6 Decision tecnica: Spring WebFlux end-to-end
 
-Se prioriza **Spring Web MVC con Virtual Threads (Java 25)** como stack principal para
-la modernizacion inicial de FinScale, manteniendo arquitectura event-driven para
-desacoplamiento entre dominios.
+Se prioriza **Spring WebFlux (Java 25 + Spring Boot 4)** como stack principal para
+la modernizacion de FinScale. La razon ya no es solo atender muchas peticiones HTTP:
+el dominio requiere **coordinacion masiva de I/O distribuido en tiempo real** entre
+pagos, ledger, fraude, FX, clearing, legado y proyecciones. Por eso el modelo debe
+ser reactivo y no bloqueante desde el borde hasta los adaptadores.
 
-| Criterio | Spring WebFlux | Spring Web + Virtual Threads | Decision para FinScale |
+| Criterio | Spring WebFlux | Enfoque descartado: Spring Web + Virtual Threads | Decision para FinScale |
 |---|---|---|---|
-| Curva de aprendizaje del equipo | Alta (modelo reactivo end-to-end, backpressure, operadores) | Media-baja (modelo imperativo conocido) | **Gana Virtual Threads** por adopcion mas rapida |
-| Compatibilidad con dependencias legacy | Requiere aislar llamadas bloqueantes o adaptarlas | Soporta naturalmente I/O bloqueante en hilos livianos | **Gana Virtual Threads** por menor friccion |
-| Time-to-market de migracion | Riesgo de sobre-esfuerzo por refactor profundo | Migracion incremental con menor cambio mental | **Gana Virtual Threads** |
-| Observabilidad y debugging | Mas complejo en flujos reactivos extensos | Trazas y debugging similares al modelo actual | **Gana Virtual Threads** |
-| Escalabilidad I/O bound | Muy alta | Alta (con hilos livianos y tuning correcto) | **Empate practico** para objetivos iniciales |
-| Riesgo de implementacion | Mayor (errores de programacion reactiva) | Menor (patrones conocidos) | **Gana Virtual Threads** |
+| Coordinacion masiva de I/O distribuido | Diseñado para flujos no bloqueantes, composicion asincrona y backpressure | Escala concurrencia bloqueante, pero no resuelve backpressure end-to-end | **Gana WebFlux** |
+| Backpressure y control de presion | Nativo con `Mono`/`Flux`, Reactor y conectores compatibles | Requiere politicas externas y colas para evitar saturacion | **Gana WebFlux** |
+| Integracion con Kafka/streaming | Alineado con pipelines reactivos y procesamiento por demanda | Funciona, pero mezcla modelo imperativo con flujos asincronos intensivos | **Gana WebFlux** |
+| Compatibilidad con legacy bloqueante | Requiere aislar adaptadores bloqueantes en pools dedicados o fachadas asincronas | Mas directo para llamadas bloqueantes | **Riesgo de WebFlux mitigado** con ACL y bulkheads |
+| Curva de aprendizaje | Alta; exige disciplina reactiva, pruebas y observabilidad especifica | Menor para equipos Java tradicionales | **Riesgo aceptado** por criticidad del problema |
+| Escalabilidad I/O bound | Muy alta cuando el stack completo evita bloqueo | Alta, pero con limites operativos en coordinacion distribuida intensa | **Gana WebFlux** |
 
 **Por que es mejor opcion en este contexto**
-- FinScale parte de un monolito Java 8 con fuerte presencia de integraciones bloqueantes (Oracle,
-  HSM on-prem, ISO 8583 TCP, conectores legacy por pais).
-- Virtual Threads permite escalar concurrencia sin obligar una reescritura completa a paradigma
-  reactivo en la primera fase del Strangler.
-- Reduce el riesgo de entrega y acelera la captura de valor de negocio (menos tiempo de capacitacion
-  y menor complejidad operativa inicial).
-- Permite evolucionar por etapas: primero desacoplar dominios y datos; luego optimizar hot paths
-  especificos donde reactive/non-blocking aporte ventajas claras.
+- FinScale no solo procesa peticiones aisladas: coordina en tiempo real multiples
+  dependencias remotas, eventos, confirmaciones, timeouts y compensaciones.
+- WebFlux permite modelar flujos con backpressure, timeouts, retries e idempotencia
+  sin ocupar hilos por cada espera de red.
+- La arquitectura event-driven con Kafka queda mejor alineada con un modelo
+  no bloqueante de punta a punta.
+- Las dependencias legacy bloqueantes no gobiernan el core: se confinan en
+  `LegacyAdapter`/ACL, con pools dedicados, bulkheads y contratos asincronos cuando aplique.
+- El riesgo de adopcion se mitiga con Spec Driven Design, guias de programacion reactiva,
+  pruebas de contrato y observabilidad desde el inicio.
 
 **Restricciones de Negocio:**
 
@@ -414,9 +418,9 @@ Para medir el exito de la transformacion:
 
 | Objetivo Estrategico | Driver de Arquitectura | KPI de Negocio | Metrica Tecnica |
 |---------------------|----------------------|---------------|----------------|
-| Escalabilidad Extrema | Arquitectura desacoplada + Virtual Threads + auto-scaling | Soportar eventos de 1M TPS sin perdida de transacciones | Throughput p99, tiempo de auto-scale, % packet loss |
+| Escalabilidad Extrema | Arquitectura desacoplada + WebFlux + backpressure + auto-scaling | Soportar eventos de 1M TPS sin perdida de transacciones | Throughput p99, tiempo de auto-scale, % packet loss |
 | Disponibilidad 99.999% | Multi-region + failover + desacoplamiento | < 5.26 min downtime al año | Uptime %, MTTR, numero de incidentes P1 |
-| Modernizacion a Cloud Native | Spring Boot 4 (Spring Web + Virtual Threads) + Kubernetes + Event-Driven | Time-to-market de 4 meses a 2 semanas | Lead time for changes, deployment frequency |
+| Modernizacion a Cloud Native | Spring Boot 4 (WebFlux) + Kubernetes + Event-Driven | Time-to-market de 4 meses a 2 semanas | Lead time for changes, deployment frequency |
 | Gobierno de Datos (PCI-DSS/GDPR) | Trazabilidad total + cifrado + tokenizacion | 0 hallazgos criticos en auditoria | % transacciones trazables, cobertura de cifrado |
 | Resiliencia | Circuit breaker + bulkhead + colas de reintento | Fallo en fraude no afecta pagos | Blast radius por fallo, tiempo de recuperacion |
 | Eliminacion batch nocturno | CQRS + Event Streaming para reconciliacion | Operacion 24/7 sin ventanas | Horas de indisponibilidad por mantenimiento |

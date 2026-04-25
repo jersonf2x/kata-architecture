@@ -51,15 +51,15 @@ C4Container
     Person(usuario, "Usuario final", "App / Web")
     System_Boundary(gl, "GlobalLedger - Plataforma") {
         Container(agw, "API Gateway", "Kong / AWS API GW / similar", "TLS, throttling, routing, mTLS, WAF en borde")
-        Container(bff, "BFF Canales (opcional)", "Spring Boot 4", "Agrega y adapta a movil; evita overfetch")
-        Container(po, "Payment Orchestration", "Java 25, Spring Web + VT", "Orquesta pago, idempotencia, SAGA")
-        Container(fx, "FX Service", "Java 25", "Cotizacion y lock de tasa")
-        Container(fr, "Fraud and Screening", "Java 25", "Motor de riesgo <100ms p99")
-        Container(ld, "Ledger Service", "Java 25", "Doble entrada, verdad de saldo")
-        Container(cl, "Clearing Adapters", "Java 25", "Conectores por red, anti-corruption")
-        Container(rc, "Reconciliation", "Java 25 + batch/stream", "Extractos vs asientos, sin lock masivo de BD")
-        Container(tx, "Treasury Views", "Java 25 o read models", "Liquidez y proyecciones (CQRS read)")
-        Container(leg, "Legacy Adapter", "Java 25", "ACL hacia CORE_SCHEMA, SP, compatibilidad")
+        Container(bff, "BFF Canales (opcional)", "Spring Boot 4 + WebFlux", "Agrega y adapta a movil; evita overfetch")
+        Container(po, "Payment Orchestration", "Java 25, Spring WebFlux", "Orquesta pago, idempotencia, SAGA reactiva")
+        Container(fx, "FX Service", "Java 25, WebFlux", "Cotizacion y lock de tasa no bloqueante")
+        Container(fr, "Fraud and Screening", "Java 25, WebFlux", "Motor de riesgo <100ms p99")
+        Container(ld, "Ledger Service", "Java 25, WebFlux", "Doble entrada, verdad de saldo")
+        Container(cl, "Clearing Adapters", "Java 25, WebFlux", "Conectores por red, anti-corruption")
+        Container(rc, "Reconciliation", "Java 25, WebFlux + stream", "Extractos vs asientos, sin lock masivo de BD")
+        Container(tx, "Treasury Views", "Java 25, WebFlux/read models", "Liquidez y proyecciones (CQRS read)")
+        Container(leg, "Legacy Adapter", "Java 25, WebFlux + ACL", "ACL hacia CORE_SCHEMA, SP, compatibilidad")
         ContainerDb(pg, "OLTP por dominio", "PostgreSQL (nuevo) y/o particiones", "Por servicio, sin shared DB de escritura")
         Container(kfk, "Event Bus", "Kafka (o Pulsar)", "Outbox, dominio, analitica")
         Container(obs, "Observabilidad", "OpenTelemetry, Prometheus", "Trazas, metricas, logs estructurados")
@@ -96,7 +96,7 @@ C4Component
     title Contenedor Payment Orchestration - (C4 Nivel 3: Componentes, vista simplificada)
 
     Container_Boundary(po, "Payment Orchestration Service") {
-        Component(in, "REST / Web (Virtual Threads)", "Controladores, validacion contrato, idempotency-key")
+        Component(in, "REST / WebFlux", "Handlers/controladores reactivos, validacion contrato, idempotency-key")
         Component(app, "Aplicacion / Orquesta", "Casos de uso, maquina de estados de orden")
         Component(saga, "SAGA + compensaciones", "Pasos, timeouts, reintentos idempotentes")
         Component(ports, "Puertos (hexagonal)", "Interfaces a FX, Fraude, Ledger, Clearing, Legacy")
@@ -114,7 +114,7 @@ C4Component
     Rel(saga, db, "Persiste estado y Outbox", "JDBC/Tx")
     Rel(out, bus, "Publica eventos", "Producente asegurado (Outbox)")
 
-    Rel(in, in, "Virtual Threads: I/O de red/BD", "Bajo hilo de plataforma")
+    Rel(in, in, "WebFlux: I/O no bloqueante + backpressure", "Event loop / Reactor")
 ```
 
 ---
@@ -258,7 +258,7 @@ flowchart LR
 |--------|--------------------------------------------------|
 | **Nuevo monolito unico a largo plazo** | Choca con **Escalabilidad Extrema**, **Modernizacion a Cloud Native**, **Resiliencia** y **Disponibilidad 99.999%** (un solo despliegue y acoplamiento amplio). |
 | **2PC/WS-AT** | Choca con **Escalabilidad Extrema** y **Disponibilidad 99.999%** (latencia y fragilidad operativa vs picos y SLAs). |
-| **Pila reactiva pura (WebFlux) en *todos* los servicios** | Choca con **Modernizacion a Cloud Native** y **Resiliencia** en fase de migracion; se sustituye por **Virtual Threads** + I/O y async adecuado en bordes y mensajes. |
+| **Spring Web MVC + Virtual Threads como stack principal** | No cubre suficientemente la **coordinacion masiva de I/O distribuido en tiempo real** ni el backpressure end-to-end; queda permitido solo para herramientas internas no criticas o adaptadores aislados si no participan del flujo core. |
 | **Shared database entre microservicios** (escritura compartida) | Choca con **Escalabilidad Extrema**, **Resiliencia** y **Gobierno de Datos (PCI-DSS/GDPR)**; solo tolerado en fase de **ACL/Oracle** bajo gobierno. |
 
 ---
@@ -312,7 +312,7 @@ flowchart TB
 
 **Drivers de arquitectura (Etapa 1) que este patron contribuye a cumplir**
 
-- **Arquitectura desacoplada + Virtual Threads + auto-scaling**: el core OLTP publica hechos sin
+- **Arquitectura desacoplada + WebFlux + backpressure + auto-scaling**: el core OLTP publica hechos sin
   acoplar sincronicamente a todos los consumidores; cada consumidor escala por su demanda.
 - **Escalabilidad Extrema**: Kafka actua como buffer y fan-out para picos (notificaciones,
   proyecciones, compliance) sin convertir cada lectura analitica en carga directa sobre OLTP.
@@ -365,20 +365,25 @@ legacy pasa por una **puerta** (API interna/facade) con limites claros y pruebas
 | Capa | Eleccion (propuesta) | Comentario |
 |------|----------------------|------------|
 | Runtime | **Java 25** + **Spring Boot 4** | Base unica para servicios, modulo por modulo. |
-| API | **Spring Web (MVC) + Virtual Threads** en la mayoria de servicios | Concurrencia masiva I/O con modelo imperativo/hexagonal, menor friccion con legado. |
+| API | **Spring WebFlux end-to-end** en servicios core y BFF | I/O no bloqueante, composicion asincrona, backpressure y coordinacion distribuida en tiempo real. |
 | Mensajeria | **Apache Kafka** (Pulsar aceptable) | Outbox, streaming, proyecciones, integracion asincrona. |
 | Datos nuevos | **PostgreSQL** por servicio (sin escritura compartida) | OLTP; migrar Golden Record con estrategia por fase. |
 | Datos legado | **Oracle (CORE_SCHEMA)** a traves de **LegacyAdapter** | Aislamiento, vistas de compatibilidad, CDC cuando aplique. |
 | Resiliencia | **Resilience4j** | Circuit breaker, rate limit, retry con backoff, bulkhead. |
 | Observabilidad | **OpenTelemetry** + back-end estandar (Prometheus, Grafana) | SLO, MTTR, trazas por `correlationId` / pago. |
 
-**Por que no WebFlux "como stack unico"**: el objetivo de reactivos **no** es la sintaxis
-`Mono` en todos los lados, sino **alta concurrencia I/O** y **asincronia** donde importa. En
-**Java 21+**, Virtual Threads permiten sostener cientos de miles de operaciones I/O
-concurrentes con programacion sencilla y con excelente alineacion con drivers bloqueantes y
-fases de migracion. La **alta tasa y picos** se resuelven con **escala horizontal, particion
-de colas, modelos de datos, y asincronia de dominio (Kafka)**, ademas de tuning concreto; no
-solo con el estilo reactivo del framework web.
+**Por que WebFlux como stack unico**: el problema central no es solamente aceptar muchas
+peticiones HTTP, sino coordinar **I/O distribuido en tiempo real** con pagos, ledger, fraude,
+FX, clearing, legado, Kafka y proyecciones. WebFlux permite expresar esos flujos con
+`Mono`/`Flux`, timeouts, retries, cancelacion y **backpressure** como parte del contrato de
+ejecucion. La alta tasa y los picos siguen dependiendo de **escala horizontal, particion de
+colas, modelos de datos e idempotencia**, pero el framework web y los adaptadores deben ser
+no bloqueantes para no convertir cada espera remota en presion sobre hilos.
+
+**Regla de implementacion**: cualquier dependencia bloqueante (Oracle legado, HSM on-prem,
+ISO 8583 TCP o conector por pais sin driver reactivo) se encapsula fuera del core reactivo
+mediante `LegacyAdapter`/ACL, bulkheads y pools dedicados. No se permite que una llamada
+bloqueante contamine handlers, casos de uso o composiciones reactivas criticas.
 
 ---
 
