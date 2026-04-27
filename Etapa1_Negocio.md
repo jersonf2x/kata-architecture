@@ -418,7 +418,7 @@ Para medir el exito de la transformacion:
 
 | Objetivo Estrategico | Driver Arquitectonico | Tacticas / Decisiones de Diseño | KPI de Negocio | Metrica Tecnica |
 |---------------------|-----------------------|--------------------------------|----------------|----------------|
-| Escalabilidad Extrema | Alta concurrencia I/O y absorcion de picos transaccionales | WebFlux, backpressure, Kafka, particionamiento, auto-scaling | Soportar eventos de 1M TPS sin perdida de transacciones | Throughput p99, tiempo de auto-scale, % packet loss |
+| Escalabilidad Extrema | Alta concurrencia I/O y absorcion de picos transaccionales | WebFlux, backpressure, Kafka, auto-scaling | Soportar eventos de 1M TPS sin perdida de transacciones | Throughput p99, tiempo de auto-scale, % packet loss |
 | Disponibilidad 99.999% | Continuidad operativa ante fallas de zona, region o dependencia externa | Multi-region, failover, health checks, degradacion controlada | < 5.26 min downtime al año | Uptime %, MTTR, numero de incidentes P1 |
 | Modernizacion a Cloud Native | Despliegue independiente, elasticidad y reduccion del lead time | Spring Boot 4, WebFlux, Kubernetes, arquitectura event-driven | Time-to-market de 4 meses a 2 semanas | Lead time for changes, deployment frequency |
 | Gobierno de Datos (PCI-DSS/GDPR) | Auditabilidad, privacidad y trazabilidad de punta a punta | Lineage, cifrado, tokenizacion, contratos de eventos, observabilidad | 0 hallazgos criticos en auditoria | % transacciones trazables, cobertura de cifrado |
